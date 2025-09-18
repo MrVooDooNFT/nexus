@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo ">>> Nexus Node Auto Installer by MrVooDoo <<<"
+echo ">>> Nexus Node Ultra Installer by MrVooDoo <<<"
 
 # 1) Root kontrolü
 if [ "$EUID" -ne 0 ]; then
@@ -11,10 +11,31 @@ fi
 # 2) Paket güncelle
 apt update -y
 
-# 3) Gerekli paketleri kur
-echo ">>> Installing required packages..."
-apt install -y build-essential gcc make pkg-config libssl-dev protobuf-compiler \
-               curl git clang cmake unzip || { echo "❌ Package installation failed!"; exit 1; }
+# 3) Gerekli paketler (tek tek kontrol + tekrar deneme)
+REQUIRED_PKGS=("build-essential" "gcc" "make" "pkg-config" "libssl-dev" "protobuf-compiler" "curl" "git" "clang" "cmake" "unzip")
+
+for pkg in "${REQUIRED_PKGS[@]}"; do
+  echo ">>> Checking package: $pkg"
+  if ! dpkg -s $pkg &> /dev/null; then
+    echo "   -> $pkg not installed. Installing..."
+    apt install -y $pkg
+    # İlk yüklemeden sonra kontrol
+    if ! dpkg -s $pkg &> /dev/null; then
+      echo "   -> $pkg still missing, retrying..."
+      apt install -y $pkg
+      # İkinci kontrol
+      if dpkg -s $pkg &> /dev/null; then
+        echo "✅ $pkg installed successfully after retry."
+      else
+        echo "❌ $pkg could not be installed, skipping..."
+      fi
+    else
+      echo "✅ $pkg installed successfully."
+    fi
+  else
+    echo "✅ $pkg already installed."
+  fi
+done
 
 # 4) Rust & Cargo kontrol
 if ! command -v cargo &> /dev/null; then
@@ -47,7 +68,8 @@ if [ -f "$SCRIPT_DIR/clients/cli/Cargo.toml" ]; then
 elif [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
   cd "$SCRIPT_DIR"
 else
-  echo "❌ Cargo.toml not found! Please check your repo."
+  echo "❌ Cargo.toml not found! Repo might be corrupted."
+  echo "Please re-clone: git clone https://github.com/MrVooDooNFT/nexus.git ~/nexus"
   exit 1
 fi
 
@@ -62,6 +84,7 @@ cargo build --release -j $(nproc) || { echo "❌ Build failed. Please check erro
 # 10) Binary kontrol
 if [ ! -f "./target/release/nexus-network" ]; then
   echo "❌ nexus-network binary not found after build!"
+  echo "Possible fix: run 'cargo clean && cargo build --release'"
   exit 1
 fi
 
@@ -75,8 +98,8 @@ echo "Detected $CPU cores and ${RAM}GB RAM."
 read -p "Threads per task (1-$CPU): " THREADS
 
 if [ "$THREADS" -gt "$RAM" ]; then
-  echo "⚠️ Warning: You selected $THREADS threads but system has only ${RAM}GB RAM."
-  echo "Recommended: 1GB RAM per thread."
+  echo "⚠️ Warning: $THREADS threads seçildi ama sistemde sadece ${RAM}GB RAM var."
+  echo "Önerilen: 1GB RAM = 1 Thread"
 fi
 
 # 13) Zorluk seçimi
